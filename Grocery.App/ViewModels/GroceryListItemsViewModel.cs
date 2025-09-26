@@ -15,36 +15,54 @@ namespace Grocery.App.ViewModels
         private readonly IGroceryListItemsService _groceryListItemsService;
         private readonly IProductService _productService;
         private readonly IFileSaverService _fileSaverService;
-        
+
+        //  Bronlijst met alle producten (nodig voor filteren en resetten)
+        private List<Product> _allProducts = new();
+
         public ObservableCollection<GroceryListItem> MyGroceryListItems { get; set; } = [];
         public ObservableCollection<Product> AvailableProducts { get; set; } = [];
 
         [ObservableProperty]
         GroceryList groceryList = new(0, "None", DateOnly.MinValue, "", 0);
+
         [ObservableProperty]
         string myMessage;
 
-        public GroceryListItemsViewModel(IGroceryListItemsService groceryListItemsService, IProductService productService, IFileSaverService fileSaverService)
+        public GroceryListItemsViewModel(
+            IGroceryListItemsService groceryListItemsService,
+            IProductService productService,
+            IFileSaverService fileSaverService)
         {
             _groceryListItemsService = groceryListItemsService;
             _productService = productService;
             _fileSaverService = fileSaverService;
+
             Load(groceryList.Id);
         }
 
         private void Load(int id)
         {
             MyGroceryListItems.Clear();
-            foreach (var item in _groceryListItemsService.GetAllOnGroceryListId(id)) MyGroceryListItems.Add(item);
+
+            foreach (var item in _groceryListItemsService.GetAllOnGroceryListId(id))
+                MyGroceryListItems.Add(item);
+
             GetAvailableProducts();
         }
 
         private void GetAvailableProducts()
         {
             AvailableProducts.Clear();
+            _allProducts.Clear();
+
             foreach (Product p in _productService.GetAll())
-                if (MyGroceryListItems.FirstOrDefault(g => g.ProductId == p.Id) == null  && p.Stock > 0)
+            {
+                if (MyGroceryListItems.FirstOrDefault(g => g.ProductId == p.Id) == null && p.Stock > 0)
+                {
                     AvailableProducts.Add(p);
+                    _allProducts.Add(p);
+                }
+            }
         }
 
         partial void OnGroceryListChanged(GroceryList value)
@@ -55,18 +73,31 @@ namespace Grocery.App.ViewModels
         [RelayCommand]
         public async Task ChangeColor()
         {
-            Dictionary<string, object> paramater = new() { { nameof(GroceryList), GroceryList } };
+            Dictionary<string, object> paramater = new()
+            {
+                { nameof(GroceryList), GroceryList }
+            };
+
             await Shell.Current.GoToAsync($"{nameof(ChangeColorView)}?Name={GroceryList.Name}", true, paramater);
         }
+
         [RelayCommand]
         public void AddProduct(Product product)
         {
             if (product == null) return;
+
             GroceryListItem item = new(0, GroceryList.Id, product.Id, 1);
             _groceryListItemsService.Add(item);
-            product.Stock--;
+
+            product.Stock--; // UI krijgt dit nu direct mee
             _productService.Update(product);
-            AvailableProducts.Remove(product);
+
+            if (product.Stock <= 0)
+            {
+                AvailableProducts.Remove(product);
+                _allProducts.Remove(product);
+            }
+
             OnGroceryListChanged(GroceryList);
         }
 
@@ -74,6 +105,7 @@ namespace Grocery.App.ViewModels
         public async Task ShareGroceryList(CancellationToken cancellationToken)
         {
             if (GroceryList == null || MyGroceryListItems == null) return;
+
             string jsonString = JsonSerializer.Serialize(MyGroceryListItems);
             try
             {
@@ -86,5 +118,26 @@ namespace Grocery.App.ViewModels
             }
         }
 
+        //  Zoekfunctie (SearchBar roept dit aan met SearchCommandParameter)
+        [RelayCommand]
+        public void Search(string searchTerm)
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm))
+            {
+                AvailableProducts.Clear();
+                foreach (var p in _allProducts)
+                    AvailableProducts.Add(p);
+            }
+            else
+            {
+                var filtered = _allProducts
+                    .Where(p => p.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                AvailableProducts.Clear();
+                foreach (var p in filtered)
+                    AvailableProducts.Add(p);
+            }
+        }
     }
 }

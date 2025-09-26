@@ -2,10 +2,18 @@
 
 namespace Grocery.Core.Models
 {
-    public abstract partial class Model(int id, string name) : ObservableObject
+    public partial class Model : ObservableObject
     {
-        public int Id { get; set; } = id;
         [ObservableProperty]
-        public string name = name;
+        private int id;
+
+        [ObservableProperty]
+        private string name;
+
+        public Model(int id, string name)
+        {
+            Id = id;
+            Name = name;
+        }
     }
 }
